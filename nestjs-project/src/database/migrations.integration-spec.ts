@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { DataSource } from 'typeorm';
 import { User } from '../users/entities/user.entity';
 import { Channel } from '../channels/entities/channel.entity';
@@ -16,12 +17,25 @@ const MANAGED_TABLES = [
 
 describe('Database migrations (integration)', () => {
   let dataSource: DataSource;
+  let adminDataSource: DataSource;
+  let migrationDatabase: string;
+  let migrationDatabaseCreated = false;
 
   beforeAll(async () => {
+    migrationDatabase = `streamtube_auth_migrations_${randomUUID().replaceAll('-', '')}`;
+    adminDataSource = createTestDataSource([], {
+      synchronize: false,
+      database: 'postgres',
+    });
+    await adminDataSource.initialize();
+    await adminDataSource.query(`CREATE DATABASE "${migrationDatabase}"`);
+    migrationDatabaseCreated = true;
+
     dataSource = createTestDataSource(
       [User, Channel, RefreshToken, VerificationToken],
       {
         synchronize: false,
+        database: migrationDatabase,
         migrations: [
           CreateUsersAndChannels1775687773260,
           CreateAuthTokens1777579850478,
@@ -30,20 +44,21 @@ describe('Database migrations (integration)', () => {
     );
 
     await dataSource.initialize();
-
-    await Promise.all([
-      ...MANAGED_TABLES.map((table) =>
-        dataSource.query(`DROP TABLE IF EXISTS "${table}" CASCADE`),
-      ),
-      dataSource.query(`DROP TABLE IF EXISTS "migrations" CASCADE`),
-    ]);
+    await dataSource.query('CREATE EXTENSION IF NOT EXISTS "uuid-ossp"');
   });
 
   afterAll(async () => {
-    // The second test undoes the last migration, leaving token tables missing.
-    // Re-apply so the shared DB is fully migrated when subsequent suites run.
-    await dataSource.runMigrations();
-    await dataSource.destroy();
+    try {
+      if (dataSource?.isInitialized) await dataSource.destroy();
+    } finally {
+      try {
+        if (adminDataSource?.isInitialized && migrationDatabaseCreated) {
+          await adminDataSource.query(`DROP DATABASE "${migrationDatabase}"`);
+        }
+      } finally {
+        if (adminDataSource?.isInitialized) await adminDataSource.destroy();
+      }
+    }
   });
 
   it('should apply all migrations and create all four tables', async () => {

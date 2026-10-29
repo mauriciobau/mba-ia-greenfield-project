@@ -1,14 +1,18 @@
-import { QueryFailedError } from 'typeorm';
+import { DataSource, EntityManager, QueryFailedError } from 'typeorm';
 import { ChannelsService } from './channels.service';
 import { Channel } from './entities/channel.entity';
 
-function makeManager(overrides: Record<string, jest.Mock> = {}): any {
+type ManagerMock = jest.Mocked<
+  Pick<EntityManager, 'findOne' | 'create' | 'save'>
+>;
+
+function makeManager(overrides: Partial<ManagerMock> = {}): ManagerMock {
   return {
     findOne: jest.fn(),
     create: jest.fn(),
     save: jest.fn(),
     ...overrides,
-  };
+  } as unknown as ManagerMock;
 }
 
 function makeChannel(nickname: string): Channel {
@@ -24,19 +28,42 @@ function makeChannel(nickname: string): Channel {
 }
 
 function makeUniqueError(): QueryFailedError {
-  const err = new QueryFailedError('INSERT', [], new Error()) as any;
-  err.code = '23505';
-  err.detail = 'Key (nickname)=(abc) already exists.';
-  return err;
+  const driverError = Object.assign(new Error('Unique constraint violation'), {
+    code: '23505',
+    detail: 'Key (nickname)=(abc) already exists.',
+  });
+  return new QueryFailedError('INSERT', [], driverError);
 }
 
-function makeDataSource(manager: any): any {
+function makeDataSource(manager: ManagerMock): DataSource {
   return {
-    transaction: jest.fn((cb: (manager: any) => Promise<any>) => cb(manager)),
-  };
+    transaction: jest.fn(
+      (callback: (manager: EntityManager) => Promise<unknown>) =>
+        callback(manager as unknown as EntityManager),
+    ),
+  } as unknown as DataSource;
 }
 
 describe('ChannelsService', () => {
+  describe('findByUserId', () => {
+    it('returns the channel owned by the requested user', async () => {
+      const channel = makeChannel('owned-channel');
+      const repository = {
+        findOneBy: jest.fn().mockResolvedValue(channel),
+      };
+      const dataSource = {
+        getRepository: jest.fn().mockReturnValue(repository),
+      };
+      const service = new ChannelsService(dataSource as unknown as DataSource);
+
+      const result = await service.findByUserId('user-id');
+
+      expect(dataSource.getRepository).toHaveBeenCalledWith(Channel);
+      expect(repository.findOneBy).toHaveBeenCalledWith({ user_id: 'user-id' });
+      expect(result).toBe(channel);
+    });
+  });
+
   describe('createChannel', () => {
     it('derives nickname from email prefix and saves when no collision', async () => {
       const channel = makeChannel('test');
@@ -49,10 +76,10 @@ describe('ChannelsService', () => {
 
       const result = await service.createChannel('user-id', 'test@example.com');
 
-      expect(manager.findOne).toHaveBeenCalledWith(Channel, {
+      expect(manager['findOne']).toHaveBeenCalledWith(Channel, {
         where: { nickname: 'test' },
       });
-      expect(manager.save).toHaveBeenCalledTimes(1);
+      expect(manager['save']).toHaveBeenCalledTimes(1);
       expect(result.nickname).toBe('test');
     });
 
@@ -71,8 +98,8 @@ describe('ChannelsService', () => {
 
       const result = await service.createChannel('user-id', 'john@example.com');
 
-      expect(manager.findOne).toHaveBeenCalledTimes(2);
-      expect(manager.save).toHaveBeenCalledTimes(1);
+      expect(manager['findOne']).toHaveBeenCalledTimes(2);
+      expect(manager['save']).toHaveBeenCalledTimes(1);
       expect(result.nickname).toMatch(/^john_[a-z0-9]{3}$/);
     });
 
@@ -96,7 +123,7 @@ describe('ChannelsService', () => {
         'alice@example.com',
       );
 
-      expect(manager.save).toHaveBeenCalledTimes(2);
+      expect(manager['save']).toHaveBeenCalledTimes(2);
       expect(result.nickname).toMatch(/^alice/);
     });
 
@@ -129,7 +156,7 @@ describe('ChannelsService', () => {
       await expect(
         service.createChannel('user-id', 'carol@example.com'),
       ).rejects.toThrow('Connection lost');
-      expect(manager.save).toHaveBeenCalledTimes(1);
+      expect(manager['save']).toHaveBeenCalledTimes(1);
     });
   });
 });

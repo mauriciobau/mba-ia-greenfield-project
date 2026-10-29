@@ -6,6 +6,12 @@ const requiredEnv = {
   DB_NAME: 'db',
   JWT_SECRET: 'secret',
   JWT_REFRESH_SECRET: 'refresh-secret',
+  S3_ENDPOINT: 'http://storage:9000',
+  S3_PUBLIC_ENDPOINT: 'http://localhost:9000',
+  S3_BUCKET: 'test-bucket',
+  S3_REGION: 'us-east-1',
+  S3_ACCESS_KEY: 'test-access-key',
+  S3_SECRET_KEY: 'test-secret-key',
 };
 
 const validate = (env: Record<string, string>) =>
@@ -32,8 +38,11 @@ describe('envValidationSchema — SWAGGER_ENABLED', () => {
   });
 
   it('should apply default false when SWAGGER_ENABLED is not set', () => {
-    const { value, error } = validate({});
-    expect(error).toBeUndefined();
-    expect(value.SWAGGER_ENABLED).toBe('false');
+    const result = validate({}) as {
+      value: Record<string, string>;
+      error?: Error;
+    };
+    expect(result.error).toBeUndefined();
+    expect(result.value.SWAGGER_ENABLED).toBe('false');
   });
 });

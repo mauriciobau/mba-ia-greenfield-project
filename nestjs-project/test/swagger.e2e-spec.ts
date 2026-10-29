@@ -8,6 +8,29 @@ import { DomainExceptionFilter } from '../src/common/filters/domain-exception.fi
 import { ValidationExceptionFilter } from '../src/common/filters/validation-exception.filter';
 import { buildSwaggerConfig } from '../src/swagger/swagger-document';
 
+interface OpenApiSchema {
+  $ref?: string;
+  type?: string;
+  format?: string;
+  nullable?: boolean;
+  enum?: string[];
+  required?: string[];
+  properties?: Record<string, OpenApiSchema>;
+  additionalProperties?: boolean | OpenApiSchema;
+}
+
+interface OpenApiResponse {
+  content?: Record<string, { schema: OpenApiSchema }>;
+}
+
+interface OpenApiDocument {
+  paths: Record<
+    string,
+    Record<string, { responses: Record<string, OpenApiResponse> }>
+  >;
+  components: { schemas: Record<string, OpenApiSchema> };
+}
+
 async function createApp(withSwagger: boolean): Promise<INestApplication<App>> {
   const moduleFixture = await Test.createTestingModule({
     imports: [AppModule],
@@ -76,6 +99,72 @@ describe('Swagger endpoints (e2e)', () => {
         >,
       ).toMatchObject({
         'access-token': { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' },
+      });
+    });
+
+    it('documents concrete video access response schemas and nullable state fields', async () => {
+      const response = await request(app.getHttpServer())
+        .get('/api/docs-json')
+        .expect(200);
+      const document = response.body as OpenApiDocument;
+      const jsonSchema = (path: string, method: string): OpenApiSchema => {
+        const operation = document.paths[path]?.[method];
+        return operation?.responses['200']?.content?.['application/json']
+          ?.schema as OpenApiSchema;
+      };
+
+      expect(jsonSchema('/videos/{publicId}', 'get')).toEqual({
+        $ref: '#/components/schemas/VideoStateResponseDto',
+      });
+      expect(jsonSchema('/videos/{publicId}/playback-url', 'post')).toEqual({
+        $ref: '#/components/schemas/VideoReadUrlResponseDto',
+      });
+      expect(jsonSchema('/videos/{publicId}/download-url', 'post')).toEqual({
+        $ref: '#/components/schemas/VideoReadUrlResponseDto',
+      });
+
+      const videoState = document.components.schemas.VideoStateResponseDto;
+      expect(videoState.required).toEqual(
+        expect.arrayContaining([
+          'publicId',
+          'status',
+          'sizeBytes',
+          'durationMs',
+          'metadata',
+          'errorCode',
+        ]),
+      );
+      expect(videoState.properties?.status.enum).toEqual([
+        'draft',
+        'processing',
+        'ready',
+        'error',
+      ]);
+      expect(videoState.properties?.sizeBytes).toMatchObject({
+        type: 'integer',
+        nullable: true,
+      });
+      expect(videoState.properties?.durationMs).toMatchObject({
+        type: 'integer',
+        nullable: true,
+      });
+      expect(videoState.properties?.metadata).toMatchObject({
+        type: 'object',
+        nullable: true,
+      });
+      expect(videoState.properties?.errorCode).toMatchObject({
+        type: 'string',
+        nullable: true,
+      });
+
+      const readUrl = document.components.schemas.VideoReadUrlResponseDto;
+      expect(readUrl.properties?.url).toMatchObject({
+        type: 'string',
+        format: 'uri',
+      });
+      expect(readUrl.properties?.expiresAt).toMatchObject({
+        type: 'string',
+        format: 'date-time',
       });
     });
 
