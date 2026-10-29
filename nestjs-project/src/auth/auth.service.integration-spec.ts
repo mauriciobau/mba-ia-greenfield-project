@@ -17,6 +17,7 @@ import {
   TokenReuseDetectedException,
 } from '../common/exceptions/domain.exception';
 import { MailModule } from '../mail/mail.module';
+import { MailService } from '../mail/mail.service';
 import { Channel } from '../channels/entities/channel.entity';
 import { User } from '../users/entities/user.entity';
 import { UsersModule } from '../users/users.module';
@@ -33,10 +34,11 @@ import {
 } from './entities/verification-token.entity';
 
 const ALL_ENTITIES = [User, Channel, RefreshToken, VerificationToken];
+const mailServices = new WeakMap<AuthService, MailService>();
 
 async function createAuthTestModule(): Promise<TestingModule> {
   const ds = createTestDataSource(ALL_ENTITIES);
-  return Test.createTestingModule({
+  const module = await Test.createTestingModule({
     imports: [
       ConfigModule.forRoot({
         isGlobal: true,
@@ -61,16 +63,20 @@ async function createAuthTestModule(): Promise<TestingModule> {
     ],
     providers: [AuthService],
   }).compile();
+  mailServices.set(module.get(AuthService), module.get(MailService));
+  return module;
 }
 
 function captureConfirmationToken(authService: AuthService): Promise<string> {
   return new Promise((resolve) => {
-    const mailServiceInstance = (authService as any).mailService;
+    const mailServiceInstance = mailServices.get(authService);
+    if (!mailServiceInstance) throw new Error('MailService is not registered');
     jest
       .spyOn(mailServiceInstance, 'sendConfirmationEmail')
-      .mockImplementationOnce(async (_e: string, _n: string, t: string) =>
-        resolve(t),
-      );
+      .mockImplementationOnce((_e: string, _n: string, t: string) => {
+        resolve(t);
+        return Promise.resolve();
+      });
   });
 }
 
@@ -231,7 +237,7 @@ describe('AuthService — confirm (integration)', () => {
 
   it('throws TokenExpiredException for an expired token', async () => {
     const capturePromise = captureConfirmationToken(authService);
-    const { id: userId } = await authService.register({
+    await authService.register({
       email: 'expired@example.com',
       password: 'password123',
     });
@@ -562,12 +568,14 @@ describe('AuthService — logout (integration)', () => {
 
 function capturePasswordResetToken(authService: AuthService): Promise<string> {
   return new Promise((resolve) => {
-    const mailServiceInstance = (authService as any).mailService;
+    const mailServiceInstance = mailServices.get(authService);
+    if (!mailServiceInstance) throw new Error('MailService is not registered');
     jest
       .spyOn(mailServiceInstance, 'sendPasswordResetEmail')
-      .mockImplementationOnce(async (_e: string, _n: string, t: string) =>
-        resolve(t),
-      );
+      .mockImplementationOnce((_e: string, _n: string, t: string) => {
+        resolve(t);
+        return Promise.resolve();
+      });
   });
 }
 

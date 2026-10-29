@@ -1,16 +1,19 @@
-import { BadRequestException, ArgumentsHost } from '@nestjs/common';
+import { BadRequestException } from '@nestjs/common';
+import type { ArgumentsHost } from '@nestjs/common';
 import { ValidationExceptionFilter } from './validation-exception.filter';
 
 describe('ValidationExceptionFilter', () => {
   let filter: ValidationExceptionFilter;
-  let mockJson: jest.Mock;
-  let mockStatus: jest.Mock;
+  let mockJson: jest.Mock<void, [unknown]>;
+  let mockStatus: jest.Mock<{ json: jest.Mock<void, [unknown]> }, [number]>;
   let mockHost: ArgumentsHost;
 
   beforeEach(() => {
     filter = new ValidationExceptionFilter();
-    mockJson = jest.fn();
-    mockStatus = jest.fn().mockReturnValue({ json: mockJson });
+    mockJson = jest.fn<void, [unknown]>();
+    mockStatus = jest
+      .fn<{ json: jest.Mock<void, [unknown]> }, [number]>()
+      .mockReturnValue({ json: mockJson });
 
     mockHost = {
       switchToHttp: () => ({
@@ -19,8 +22,12 @@ describe('ValidationExceptionFilter', () => {
       }),
       getArgs: () => [],
       getArgByIndex: () => null,
-      switchToRpc: () => ({}) as any,
-      switchToWs: () => ({}) as any,
+      switchToRpc: () => {
+        throw new Error('RPC context is not used by this filter test');
+      },
+      switchToWs: () => {
+        throw new Error('WebSocket context is not used by this filter test');
+      },
       getType: () => 'http',
     } as unknown as ArgumentsHost;
   });
