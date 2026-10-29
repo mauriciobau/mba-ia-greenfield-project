@@ -1,0 +1,15 @@
+FROM node:25.6.0-bookworm-slim AS node
+
+FROM jrottenberg/ffmpeg:8.0.3-ubuntu2404
+
+RUN apt-get update \
+    && apt-get install --yes --no-install-recommends libatomic1 \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=node /usr/local/ /usr/local/
+
+WORKDIR /home/node/app
+USER 1000:1000
+
+ENTRYPOINT []
+CMD ["tail", "-f", "/dev/null"]
