@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { DataSource } from 'typeorm';
 import { Channel } from '../channels/entities/channel.entity';
 import { User } from '../users/entities/user.entity';
@@ -8,45 +9,48 @@ import { createTestDataSource } from '../test/create-test-data-source';
 import { CreateUsersAndChannels1775687773260 } from './migrations/1775687773260-CreateUsersAndChannels';
 import { CreateAuthTokens1777579850478 } from './migrations/1777579850478-CreateAuthTokens';
 import { CreateVideos1793237495685 } from './migrations/1793237495685-CreateVideos';
+import { AddVideoUploadCompletionLease1793240347823 } from './migrations/1793240347823-AddVideoUploadCompletionLease';
+import { AddVideoProcessingExecutionLease1793241000000 } from './migrations/1793241000000-AddVideoProcessingExecutionLease';
 
 const MANAGED_TABLES = ['videos', 'video_uploads', 'video_processing_outbox'];
+const MIGRATIONS = [
+  CreateUsersAndChannels1775687773260,
+  CreateAuthTokens1777579850478,
+  CreateVideos1793237495685,
+  AddVideoUploadCompletionLease1793240347823,
+  AddVideoProcessingExecutionLease1793241000000,
+];
 
 describe('Video migrations (integration)', () => {
   let dataSource: DataSource;
+  let adminDataSource: DataSource;
+  let migrationDatabase: string;
+  let migrationDatabaseCreated = false;
   let userId: string;
   let channelId: string;
 
   beforeAll(async () => {
+    migrationDatabase = `streamtube_migrations_${randomUUID().replaceAll('-', '')}`;
+    adminDataSource = createTestDataSource([], {
+      synchronize: false,
+      database: 'postgres',
+    });
+    await adminDataSource.initialize();
+    await adminDataSource.query(`CREATE DATABASE "${migrationDatabase}"`);
+    migrationDatabaseCreated = true;
+
     dataSource = createTestDataSource(
       [User, Channel, Video, VideoUpload, VideoProcessingOutbox],
       {
         synchronize: false,
-        migrations: [
-          CreateUsersAndChannels1775687773260,
-          CreateAuthTokens1777579850478,
-          CreateVideos1793237495685,
-        ],
+        migrations: MIGRATIONS,
+        database: migrationDatabase,
       },
     );
     await dataSource.initialize();
-
-    for (const table of [
-      'video_uploads',
-      'video_processing_outbox',
-      'videos',
-    ]) {
-      await dataSource.query(`DROP TABLE IF EXISTS "${table}" CASCADE`);
-    }
-    const [{ migration_table: migrationTable }] = await dataSource.query<
-      { migration_table: string | null }[]
-    >(`SELECT to_regclass('public.migrations') AS migration_table`);
-    if (migrationTable) {
-      await dataSource.query(`DELETE FROM "migrations" WHERE "name" = $1`, [
-        'CreateVideos1793237495685',
-      ]);
-    }
-
-    await dataSource.runMigrations();
+    await dataSource.query('CREATE EXTENSION IF NOT EXISTS "uuid-ossp"');
+    const ranMigrations = await dataSource.runMigrations();
+    expect(ranMigrations).toHaveLength(MIGRATIONS.length);
 
     const user = await dataSource.getRepository(User).save(
       dataSource.getRepository(User).create({
@@ -67,9 +71,16 @@ describe('Video migrations (integration)', () => {
   });
 
   afterAll(async () => {
-    if (dataSource?.isInitialized) {
-      await dataSource.runMigrations();
-      await dataSource.destroy();
+    try {
+      if (dataSource?.isInitialized) await dataSource.destroy();
+    } finally {
+      try {
+        if (adminDataSource?.isInitialized && migrationDatabaseCreated) {
+          await adminDataSource.query(`DROP DATABASE "${migrationDatabase}"`);
+        }
+      } finally {
+        if (adminDataSource?.isInitialized) await adminDataSource.destroy();
+      }
     }
   });
 
@@ -85,6 +96,20 @@ describe('Video migrations (integration)', () => {
       'video_uploads',
       'videos',
     ]);
+    const completionToken = await dataSource.query<{ column_name: string }[]>(
+      `SELECT column_name FROM information_schema.columns
+       WHERE table_schema = 'public' AND table_name = 'video_uploads'
+         AND column_name = 'completion_token'`,
+    );
+    expect(completionToken).toHaveLength(1);
+    const executionLease = await dataSource.query<{ column_name: string }[]>(
+      `SELECT column_name FROM information_schema.columns
+       WHERE table_schema = 'public' AND table_name = 'video_processing_outbox'
+         AND column_name IN ('execution_token', 'lease_expires_at', 'recovery_count')`,
+    );
+    expect(executionLease.map(({ column_name }) => column_name).sort()).toEqual(
+      ['execution_token', 'lease_expires_at', 'recovery_count'],
+    );
 
     const videoRepository = dataSource.getRepository(Video);
     const firstVideo = await videoRepository.save(
@@ -126,6 +151,8 @@ describe('Video migrations (integration)', () => {
 
   it('rolls back only video tables and preserves existing channel records', async () => {
     await dataSource.undoLastMigration();
+    await dataSource.undoLastMigration();
+    await dataSource.undoLastMigration();
 
     const remainingVideoTables = await dataSource.query<
       { table_name: string }[]
@@ -140,6 +167,33 @@ describe('Video migrations (integration)', () => {
       id: channelId,
     });
     expect(channel?.user_id).toBe(userId);
-    await dataSource.runMigrations();
+    const remainingAuthTables = await dataSource.query<
+      { table_name: string }[]
+    >(
+      `SELECT table_name FROM information_schema.tables
+       WHERE table_schema = 'public'
+         AND table_name = ANY($1::text[])`,
+      [['refresh_tokens', 'verification_tokens']],
+    );
+    expect(remainingAuthTables).toHaveLength(2);
+
+    const reappliedMigrations = await dataSource.runMigrations();
+    expect(reappliedMigrations).toHaveLength(3);
+    const restoredCompletionToken = await dataSource.query<
+      { column_name: string }[]
+    >(
+      `SELECT column_name FROM information_schema.columns
+       WHERE table_schema = 'public' AND table_name = 'video_uploads'
+         AND column_name = 'completion_token'`,
+    );
+    expect(restoredCompletionToken).toHaveLength(1);
+    const restoredExecutionLease = await dataSource.query<
+      { column_name: string }[]
+    >(
+      `SELECT column_name FROM information_schema.columns
+       WHERE table_schema = 'public' AND table_name = 'video_processing_outbox'
+         AND column_name IN ('execution_token', 'lease_expires_at', 'recovery_count')`,
+    );
+    expect(restoredExecutionLease).toHaveLength(3);
   });
 });

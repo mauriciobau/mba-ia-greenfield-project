@@ -138,6 +138,53 @@ MAIL_FROM="StreamTube <noreply@streamtube.local>"
 
 Whenever possible, prefer storing only the bare address in `.env` and composing display names in code (e.g., in `mail.config.ts`) so the file stays shell-safe.
 
+## Video Upload and Processing Operations
+
+The video API uses direct S3 multipart uploads. `POST /videos/uploads` creates a draft and multipart session; clients request short-lived part URLs and upload each part to MinIO directly. The API verifies the completed object size and records a processing event. The API never buffers the video body.
+
+- The maximum is exactly `10,000,000,000` bytes. A larger upload request returns `413 VIDEO_UPLOAD_TOO_LARGE` and creates no active upload session.
+- Parts are `64 MiB`; request signed URLs in batches of at most 100. The final part may be smaller than the S3 5 MiB minimum for non-final parts.
+- Redis (AOF enabled) and BullMQ deliver jobs to `video-worker`. A PostgreSQL outbox lets the publisher recover pending jobs. The worker downloads one source copy to temporary disk, validates media with `ffprobe`, creates a thumbnail with FFmpeg, and changes video status to `ready` or `error`.
+- Provide temporary disk space on the worker for the complete source file. Total local storage planning must include MinIO's stored source plus the worker's temporary copy.
+- Compose limits API memory to 1 GiB and worker memory to 2 GiB (`NODE_OPTIONS=--max-old-space-size=512` for the worker). These are container limits, not a promise that every 10 GB input processes within a fixed time.
+- Container-to-container hosts are `db`, `redis`, and `minio`. `S3_PUBLIC_ENDPOINT` must be reachable by the client that follows signed URLs. For clients inside Compose, use `http://minio:9000`; browser clients on the host need a host-reachable MinIO address.
+
+### Starting and checking video services
+
+From this directory, start only the application's declared services when you want the API and worker running:
+
+```bash
+docker compose up -d db mailpit redis minio minio-init nestjs-api video-worker
+docker compose ps
+docker compose exec db pg_isready -U streamtube
+docker compose logs --tail=100 video-worker
+```
+
+Run migrations in the API container before using a fresh database:
+
+```bash
+docker compose exec nestjs-api npm run migration:run
+```
+
+### Video acceptance checks
+
+The ordinary E2E suite uses Supertest, real PostgreSQL, MinIO, and Redis. Its upload-parts fixture injects `http://minio:9000` as the signed-URL endpoint so it works from inside the Docker network:
+
+```bash
+docker compose exec -T nestjs-api npm test -- --runInBand
+docker compose exec -T nestjs-api npm run test:e2e -- --runInBand
+docker compose exec -T nestjs-api npx tsc --noEmit
+docker compose exec -T nestjs-api npm run lint
+```
+
+The exact 10 GB transfer and worker processing check is intentionally opt-in because it transfers 10 GB and temporarily stores another full copy in the worker:
+
+```bash
+docker compose exec -T -e VIDEO_10GB_ACCEPTANCE=1 nestjs-api npm run test:e2e -- --runInBand test/video-pipeline.e2e-spec.ts
+```
+
+This check writes a sparse MP4 fixture with a valid `free` box, transfers every byte as multipart data to MinIO from a separate uploader process, waits for `video-worker`, checks a byte-range response, and removes its unique object and database rows. Keep at least the source size free for the worker's temporary download in addition to object-storage capacity. Its RSS assertion samples the Jest/Supertest API process while the uploader child sends the parts.
+
 ## Build Assets
 
 `tsc` (and therefore `nest build`) only emits compiled `.ts` files to `dist/`. Any non-TypeScript runtime asset — Handlebars templates (`.hbs`), JSON fixtures, static config files, etc. — must be declared in `nest-cli.json` under `compilerOptions.assets` (with `watchAssets: true` for dev). Without that, the file exists in `src/` but is missing in `dist/` and runtime fails only after build.

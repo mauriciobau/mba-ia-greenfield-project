@@ -408,16 +408,16 @@ SI-03.1 prepara storage e fila; SI-03.2 fornece as relações e transações; a 
 
 ## Deliverables
 
-- [ ] SI-03.1 — Infraestrutura, storage, fila e worker no Compose.
-- [ ] SI-03.2 — Migrations, entidades e persistência.
-- [ ] SI-03.3 — Pré-cadastro e início do upload.
-- [ ] SI-03.4 — Partes assinadas e retomada.
-- [ ] SI-03.5 — Finalização segura, abort e outbox.
-- [ ] SI-03.6 — Worker, thumbnail, metadados e recuperação.
-- [ ] SI-03.7 — Consulta, streaming e download autorizados.
-- [ ] SI-03.8 — Aceite, progresso e documentação.
-- [ ] Suíte completa: `docker compose exec nestjs-api npm test -- --runInBand`.
-- [ ] E2E: `docker compose exec nestjs-api npm run test:e2e`.
-- [ ] Compilação: `docker compose exec nestjs-api npx tsc --noEmit`.
-- [ ] Lint: `docker compose exec nestjs-api npm run lint`.
-- [ ] Spec de testes gerada antes da implementação para SIs com `Test Specs` pendente.
+- [x] SI-03.1 — Infraestrutura, storage, fila e worker no Compose.
+- [x] SI-03.2 — Migrations, entidades e persistência.
+- [x] SI-03.3 — Pré-cadastro e início do upload.
+- [x] SI-03.4 — Partes assinadas e retomada.
+- [x] SI-03.5 — Finalização segura, abort e outbox.
+- [x] SI-03.6 — Worker, thumbnail, metadados e recuperação.
+- [x] SI-03.7 — Consulta, streaming e download autorizados.
+- [x] SI-03.8 — Aceite, progresso e documentação.
+- [x] Suíte completa: `docker compose exec nestjs-api npm test -- --runInBand`.
+- [x] E2E: `docker compose exec nestjs-api npm run test:e2e`.
+- [x] Compilação: `docker compose exec nestjs-api npx tsc --noEmit`.
+- [x] Lint: `docker compose exec nestjs-api npm run lint`.
+- [x] Specs de testes geradas antes da implementação para os SIs com `Test Specs`.

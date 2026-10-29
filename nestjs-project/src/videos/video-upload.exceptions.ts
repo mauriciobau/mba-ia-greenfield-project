@@ -25,3 +25,21 @@ export class VideoChannelNotFoundException extends DomainException {
     super('VIDEO_CHANNEL_NOT_FOUND', 404, 'Video channel was not found');
   }
 }
+
+export class VideoUploadNotFoundException extends DomainException {
+  constructor() {
+    super('VIDEO_NOT_FOUND', 404, 'Video upload was not found');
+  }
+}
+
+export class VideoUploadConflictException extends DomainException {
+  constructor() {
+    super('VIDEO_UPLOAD_CONFLICT', 409, 'Video upload is no longer active');
+  }
+}
+
+export class VideoUploadInvalidPartsException extends DomainException {
+  constructor() {
+    super('VIDEO_UPLOAD_INVALID_PARTS', 400, 'Requested parts are invalid');
+  }
+}

@@ -23,6 +23,11 @@ export type VideoProcessingOutboxState = 'pending' | 'published';
   `"state" IN ('pending', 'published')`,
 )
 @Check('CHK_video_processing_outbox_generation', '"generation" > 0')
+@Check(
+  'CHK_video_processing_outbox_execution_lease',
+  '("execution_token" IS NULL) = ("lease_expires_at" IS NULL)',
+)
+@Check('CHK_video_processing_outbox_recovery_count', '"recovery_count" >= 0')
 export class VideoProcessingOutbox {
   @PrimaryGeneratedColumn('uuid')
   id: string;
@@ -35,6 +40,15 @@ export class VideoProcessingOutbox {
 
   @Column({ type: 'varchar', default: 'pending' })
   state: VideoProcessingOutboxState;
+
+  @Column({ type: 'uuid', nullable: true })
+  execution_token: string | null;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  lease_expires_at: Date | null;
+
+  @Column({ type: 'integer', default: 0 })
+  recovery_count: number;
 
   @CreateDateColumn({ type: 'timestamptz' })
   created_at: Date;

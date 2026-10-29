@@ -13,13 +13,14 @@ type TestEntity = Extract<
 interface TestDataSourceOptions {
   synchronize?: boolean;
   migrations?: (new () => MigrationInterface)[];
+  database?: string;
 }
 
 export function createTestDataSource(
   entities: TestEntity[],
   options: TestDataSourceOptions = {},
 ): DataSource {
-  const { synchronize = true, migrations } = options;
+  const { synchronize = true, migrations, database } = options;
   const configuredEntities = entities.includes(Channel)
     ? [...new Set([...entities, ...CHANNEL_RELATED_ENTITIES])]
     : entities;
@@ -29,7 +30,7 @@ export function createTestDataSource(
     port: Number(process.env.DB_PORT ?? 5432),
     username: process.env.DB_USERNAME ?? 'streamtube',
     password: process.env.DB_PASSWORD ?? 'streamtube',
-    database: process.env.DB_DATABASE ?? 'streamtube',
+    database: database ?? process.env.DB_DATABASE ?? 'streamtube',
     entities: configuredEntities,
     synchronize,
     ...(migrations !== undefined && { migrations, migrationsRun: false }),

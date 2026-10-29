@@ -7,6 +7,7 @@ const requiredEnv = {
   JWT_SECRET: 'secret',
   JWT_REFRESH_SECRET: 'refresh-secret',
   S3_ENDPOINT: 'http://storage:9000',
+  S3_PUBLIC_ENDPOINT: 'http://localhost:9000',
   S3_BUCKET: 'test-bucket',
   S3_REGION: 'us-east-1',
   S3_ACCESS_KEY: 'test-access-key',

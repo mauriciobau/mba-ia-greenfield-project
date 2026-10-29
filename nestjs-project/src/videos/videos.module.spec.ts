@@ -1,45 +1,41 @@
-import { Test } from '@nestjs/testing';
+import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigModule } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { Channel } from '../channels/entities/channel.entity';
-import { createTestDataSource } from '../test/create-test-data-source';
-import { User } from '../users/entities/user.entity';
-import { Video } from './entities/video.entity';
-import { VideoProcessingOutbox } from './entities/video-processing-outbox.entity';
-import { VideoUpload } from './entities/video-upload.entity';
+import { createIsolatedVideoDataSource } from '../test/create-isolated-video-data-source';
 import { VideosModule } from './videos.module';
 
 describe('VideosModule', () => {
   it('should compile with the exported ChannelsService and persistence providers', async () => {
-    const module = await Test.createTestingModule({
-      imports: [
-        ConfigModule.forRoot({
-          isGlobal: true,
-          ignoreEnvFile: true,
-          load: [
-            () => ({
-              S3_ENDPOINT: 'http://minio:9000',
-              S3_REGION: 'us-east-1',
-              S3_ACCESS_KEY: 'test',
-              S3_SECRET_KEY: 'test',
-              S3_BUCKET: 'videos',
-            }),
-          ],
-        }),
-        TypeOrmModule.forRoot(
-          createTestDataSource([
-            User,
-            Channel,
-            Video,
-            VideoUpload,
-            VideoProcessingOutbox,
-          ]).options,
-        ),
-        VideosModule,
-      ],
-    }).compile();
+    const isolated = await createIsolatedVideoDataSource();
+    const typeOrmOptions = isolated.dataSource.options;
+    await isolated.dataSource.destroy();
+    let module: TestingModule | undefined;
+    try {
+      module = await Test.createTestingModule({
+        imports: [
+          ConfigModule.forRoot({
+            isGlobal: true,
+            ignoreEnvFile: true,
+            load: [
+              () => ({
+                S3_ENDPOINT: 'http://minio:9000',
+                S3_PUBLIC_ENDPOINT: 'http://localhost:9000',
+                S3_REGION: 'us-east-1',
+                S3_ACCESS_KEY: 'test',
+                S3_SECRET_KEY: 'test',
+                S3_BUCKET: 'videos',
+              }),
+            ],
+          }),
+          TypeOrmModule.forRoot(typeOrmOptions),
+          VideosModule,
+        ],
+      }).compile();
 
-    expect(module).toBeDefined();
-    await module.close();
+      expect(module).toBeDefined();
+    } finally {
+      await module?.close();
+      await isolated.cleanup();
+    }
   }, 30000);
 });

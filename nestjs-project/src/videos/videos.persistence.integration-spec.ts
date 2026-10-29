@@ -145,4 +145,34 @@ describe('Videos persistence (integration)', () => {
     expect(persistedVideo.status).toBe('processing');
     expect(outboxEvents).toHaveLength(1);
   });
+
+  it('loads a multipart upload only for the owning channel user', async () => {
+    const channel = await createChannel();
+    const video = await createDraft(channel.id, 'owner-session');
+    const upload = await persistence.createUploadSession(
+      video.id,
+      'storage-upload-id',
+      '100',
+      '64',
+      new Date(Date.now() + 60_000),
+    );
+
+    const owner = await persistence.findUploadForOwner(
+      upload.id,
+      channel.user_id,
+    );
+    const nonOwner = await persistence.findUploadForOwner(
+      upload.id,
+      '00000000-0000-4000-8000-000000000001',
+    );
+    const unknown = await persistence.findUploadForOwner(
+      '00000000-0000-4000-8000-000000000002',
+      channel.user_id,
+    );
+
+    expect(owner?.id).toBe(upload.id);
+    expect(owner?.video.object_key).toBe(video.object_key);
+    expect(nonOwner).toBeNull();
+    expect(unknown).toBeNull();
+  });
 });

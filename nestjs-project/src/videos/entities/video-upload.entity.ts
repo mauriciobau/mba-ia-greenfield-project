@@ -44,6 +44,9 @@ export class VideoUpload {
   @Column({ type: 'varchar', default: 'initiated' })
   state: VideoUploadState;
 
+  @Column({ type: 'uuid', nullable: true })
+  completion_token: string | null;
+
   @Column({ type: 'timestamptz' })
   expires_at: Date;
 

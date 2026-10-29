@@ -18,6 +18,7 @@ export const envValidationSchema = Joi.object({
   PASSWORD_RESET_TOKEN_EXPIRATION_HOURS: Joi.number().default(1),
   APP_URL: Joi.string().uri().default('http://localhost:3000'),
   S3_ENDPOINT: Joi.string().uri().required(),
+  S3_PUBLIC_ENDPOINT: Joi.string().uri().required(),
   S3_BUCKET: Joi.string().required(),
   S3_REGION: Joi.string().required(),
   S3_ACCESS_KEY: Joi.string().required(),

@@ -1,6 +1,7 @@
 import {
   AbortMultipartUploadCommand,
   CreateMultipartUploadCommand,
+  ListPartsCommand,
   ListMultipartUploadsCommand,
   S3Client,
 } from '@aws-sdk/client-s3';
@@ -11,6 +12,37 @@ import {
 } from './s3-storage.service';
 
 describe('S3StorageService', () => {
+  it('returns ListParts results and the S3 continuation marker', async () => {
+    const commands: unknown[] = [];
+    const client = {
+      send: jest.fn((command: unknown) => {
+        commands.push(command);
+        return Promise.resolve({
+          IsTruncated: true,
+          NextPartNumberMarker: '1000',
+          Parts: [{ PartNumber: 1, Size: 20, ETag: '"etag"' }],
+        });
+      }),
+    } as unknown as S3Client;
+    const config = { getOrThrow: () => 'videos' } as unknown as ConfigService;
+    const service = new S3StorageService(client, client, config);
+
+    await expect(
+      service.listParts('videos/key', 'storage-id', 50),
+    ).resolves.toEqual({
+      parts: [{ partNumber: 1, size: 20, etag: '"etag"' }],
+      nextCursor: 1000,
+    });
+    expect(commands[0]).toBeInstanceOf(ListPartsCommand);
+    expect((commands[0] as ListPartsCommand).input).toMatchObject({
+      Bucket: 'videos',
+      Key: 'videos/key',
+      UploadId: 'storage-id',
+      PartNumberMarker: '50',
+      MaxParts: 1000,
+    });
+  });
+
   it('finds and aborts an upload when create response is lost', async () => {
     const key = 'videos/channel-id/unique-key/source';
     const commands: unknown[] = [];
@@ -35,7 +67,7 @@ describe('S3StorageService', () => {
     const config = {
       getOrThrow: () => 'videos',
     } as unknown as ConfigService;
-    const service = new S3StorageService(client, config);
+    const service = new S3StorageService(client, client, config);
 
     await expect(
       service.createMultipartUpload(key, 'video/mp4'),
@@ -60,7 +92,7 @@ describe('S3StorageService', () => {
     const config = {
       getOrThrow: () => 'videos',
     } as unknown as ConfigService;
-    const service = new S3StorageService(client, config);
+    const service = new S3StorageService(client, client, config);
 
     await expect(
       service.abortMultipartUpload('videos/key', 'removed-upload-id'),
@@ -77,7 +109,7 @@ describe('S3StorageService', () => {
     const config = {
       getOrThrow: () => 'videos',
     } as unknown as ConfigService;
-    const service = new S3StorageService(client, config);
+    const service = new S3StorageService(client, client, config);
 
     await expect(
       service.createMultipartUpload('videos/channel/key/source', 'video/mp4'),
