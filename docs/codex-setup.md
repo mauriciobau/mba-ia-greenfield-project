@@ -1,6 +1,6 @@
 # Fundação Codex
 
-Este documento descreve como conduzir no Codex o workflow de IA do desafio da Fase 03. Ele registra o ambiente verificado em 2026-10-29 e separa as instruções reprodutíveis das integrações que não estão configuradas. Nenhum MCP externo é instalado ou configurado por este documento.
+Este documento descreve como conduzir no Codex o workflow de IA do desafio da Fase 03. Ele registra o ambiente verificado em 2026-10-29 e instruções para reproduzir as integrações em outra instalação.
 
 ## Estado verificado neste ambiente
 
@@ -9,7 +9,7 @@ Este documento descreve como conduzir no Codex o workflow de IA do desafio da Fa
 | Codex CLI | `codex-cli 0.165.0`, disponível em `/usr/bin/codex` |
 | RTK | `rtk 0.43.0` |
 | Context7 MCP | Ativo em Codex como servidor `context7`, transporte HTTP streamable, endpoint `https://mcp.context7.com/mcp`; `codex mcp get context7` confirma configuração. O cabeçalho de autorização foi mascarado durante a inspeção e não é reproduzido aqui. |
-| Postgres MCP | Não aparece em `codex mcp list`; portanto não está configurado para esta instalação do Codex. |
+| Postgres MCP | Configurado globalmente no Codex como `postgres` por meio do container `nestjs-api`. A inicialização MCP e uma consulta de leitura ao banco `streamtube_phase03_clean` foram validadas. |
 | PostgreSQL no Docker | O serviço `db` foi verificado como saudável com um override local que remove a publicação da porta, pois a porta 5432 do host estava ocupada por outro projeto. O Compose padrão publica `5432:5432`. |
 
 Comandos usados para conferir a instalação e integrações:
@@ -22,7 +22,7 @@ rtk proxy codex mcp list
 rtk proxy codex mcp get context7
 ```
 
-O prefixo `rtk` segue a regra local em `/home/bau/.codex/RTK.md`. Os comandos `codex mcp ...` abaixo são exemplos para o ambiente de quem os executar; este documento não os executou para adicionar ou remover servidores.
+O prefixo `rtk` segue a regra local em `/home/bau/.codex/RTK.md`. Os comandos `codex mcp ...` abaixo são exemplos para o ambiente de quem os executar.
 
 ## Instruções, skills e subagentes
 
@@ -52,7 +52,15 @@ Não execute o comando `add` se Context7 já estiver configurado. A configuraç�
 
 ## Postgres MCP
 
-O servidor `postgres` não está configurado no Codex deste ambiente. O arquivo `.mcp.json` existente pertence à convenção do Claude Code; sua presença não ativa o MCP no Codex. Não interprete a configuração do Compose como evidência de que o banco está no ar.
+O arquivo `.mcp.json` existente pertence à convenção do Claude Code; sua presença não ativa o MCP no Codex. Nesta máquina, o servidor `postgres` foi configurado no Codex para executar o pacote `@modelcontextprotocol/server-postgres@0.6.2` no container `nestjs-api`. Ele lê as credenciais do `.env` local no container e conecta ao host `db` da rede Compose, sem depender da porta publicada no host. O pacote está marcado como descontinuado no npm; uma eventual substituição exige validação própria.
+
+O registro usa o caminho absoluto do Compose desta máquina. Para configurar outra instalação, ajuste o caminho e execute:
+
+```sh
+codex mcp add postgres -- docker compose -f /CAMINHO/DO/PROJETO/nestjs-project/compose.yaml exec -T nestjs-api sh -c 'set -a; . ./.env; exec npx -y @modelcontextprotocol/server-postgres@0.6.2 "postgresql://${DB_USERNAME}:${DB_PASSWORD}@db:5432/${DB_NAME}"'
+```
+
+O container `nestjs-api` e o serviço `db` precisam estar ativos, e o arquivo `.env` do backend deve conter as variáveis de banco. O primeiro uso do pacote pode requerer acesso ao npm. Reinicie a sessão do Codex para carregar o servidor recém-configurado.
 
 O Compose do backend expõe a porta `5432` no host. Se, futuramente, o processo stdio do MCP for iniciado pelo Codex CLI no host, use o endereço do host publicado (`127.0.0.1:5432`) na URL de conexão. Se o servidor MCP for executado como container na mesma rede Compose, use `db:5432`. `db` é resolução interna da rede Docker e normalmente não resolve em um processo executado diretamente no host; `localhost`/`127.0.0.1` só serve para acessar a porta publicada no próprio host. Confirme que o serviço `db` está saudável antes de conectar.
 
@@ -65,7 +73,7 @@ args = ["-c", "exec npx -y @modelcontextprotocol/server-postgres \"$DATABASE_URL
 env_vars = ["DATABASE_URL"]
 ```
 
-Defina `DATABASE_URL` no ambiente local antes de iniciar o Codex, com o usuário, senha e banco locais. Para o Codex rodando no host, a URL deve apontar para a porta publicada no host; para um servidor MCP dentro da rede Compose, ela deve apontar para `db:5432`. Não coloque uma URL com senha em `AGENTS.md`, `.mcp.json`, `compose.yaml`, exemplos versionados ou histórico de comandos. Essa configuração é apenas uma referência: este setup não foi aplicado nem validado e o override usado nesta máquina não publica a porta do banco no host.
+Defina `DATABASE_URL` no ambiente local antes de iniciar o Codex, com o usuário, senha e banco locais. Para o Codex rodando no host, a URL deve apontar para a porta publicada no host; para um servidor MCP dentro da rede Compose, ela deve apontar para `db:5432`. Não coloque uma URL com senha em `AGENTS.md`, `.mcp.json`, `compose.yaml`, exemplos versionados ou histórico de comandos. Essa alternativa no host não foi aplicada nem validada e o override usado nesta máquina não publica a porta do banco no host.
 
 Depois de configurar um servidor deliberadamente, valide com:
 
